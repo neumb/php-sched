@@ -1,8 +1,5 @@
 <?php
 
-/**
- * @template F of \Fiber<mixed,mixed,mixed,mixed>
- */
 declare(strict_types=1);
 
 namespace Neumb\Scheduler;
@@ -21,14 +18,16 @@ function panic(string $fmt = '', bool|float|int|string|null ...$args): never
 }
 
 /**
- * @param \Fiber<mixed,mixed,mixed,mixed> ...$tasks
+ * @template F of \Fiber
+ *
+ * @param F ...$tasks
  *
  * @return \Fiber<mixed,mixed,mixed,mixed>
  */
 function all(\Fiber ...$tasks): \Fiber
 {
     return async(static function () use ($tasks): void {
-        /** @var \SplQueue<\Fiber<mixed,mixed,mixed,mixed>> */
+        /** @var \SplQueue<F> */
         $queue = new \SplQueue();
 
         foreach ($tasks as $task) {
@@ -78,7 +77,9 @@ function wrapAsync(\Closure|\Fiber $task): \Fiber
 }
 
 /**
- * @param \Fiber<mixed,mixed,mixed,mixed> $task
+ * @template F of \Fiber
+ *
+ * @param F $task
  */
 function await(\Fiber $task, mixed ...$args): mixed
 {
@@ -89,23 +90,136 @@ function await(\Fiber $task, mixed ...$args): mixed
             advance($currentTask);
         });
 
-        $currentTask->suspend();
         advance($task);
+        $currentTask->suspend();
     }
 
     return $task->getReturn();
 }
 
 /**
- * @param \Fiber<mixed,mixed,mixed,mixed> $task
+ * @template F of \Fiber
+ *
+ * @param F $task
  */
 function advance(\Fiber $task, mixed ...$args): void
 {
+    if (Scheduler::get()->isDelayed($task)) {
+        return;
+    }
+
     if (!$task->isStarted()) {
         $task->start(...$args);
-    } elseif ($task->isSuspended() && !Scheduler::get()->isDelayed($task)) {
+    } elseif ($task->isSuspended()) {
         $task->resume();
     }
+}
+
+function go(\Closure $task, mixed ...$args): void
+{
+    Scheduler::get()->enqueue(static function () use ($task, $args): void {
+        $task(...$args);
+    });
+}
+
+/**
+ * @param resource   $stream
+ * @param int<1,max> $length
+ *
+ * @return \Fiber<void,void,string|false,void>
+ */
+function stream_read_async(mixed $stream, int $length): \Fiber
+{
+    /** @var \Fiber<void,void,string|false,void> */
+    $deferred = async(static function (): mixed {
+        return \Fiber::suspend();
+    });
+    $deferred->start();
+
+    Scheduler::get()->registerDelay($deferred);
+
+    Scheduler::get()->onStreamReadable($stream, static function (mixed $stream) use ($length, $deferred): void {
+        assert(is_resource($stream));
+
+        Scheduler::get()->unregisterDelay($deferred);
+        $deferred->resume(fread($stream, $length));
+    });
+
+    return $deferred;
+}
+
+/**
+ * @param resource   $stream
+ * @param int<1,max> $length
+ */
+function stream_read(mixed $stream, int $length): string|false
+{
+    return await(stream_read_async($stream, $length)); // @phpstan-ignore return.type
+}
+
+/**
+ * @return \Fiber<void,void,\Socket|false,void>
+ */
+function socket_accept_async(\Socket $sock): \Fiber
+{
+    /** @var \Fiber<void,void,\Socket|false,void> */
+    $deferred = async(static function (): mixed {
+        return \Fiber::suspend();
+    });
+    $deferred->start();
+
+    Scheduler::get()->registerDelay($deferred);
+
+    Scheduler::get()->onSocketReadable($sock, static function (mixed $stream) use ($deferred): void {
+        assert(is_resource($stream));
+        $sock = socket_import_stream($stream);
+        assert($sock instanceof \Socket);
+
+        Scheduler::get()->unregisterDelay($deferred);
+        $deferred->resume(socket_accept($sock));
+    });
+
+    return $deferred;
+}
+
+function socket_accept_(\Socket $sock): \Socket|false
+{
+    // TODO: suspend until stream_select instead of spinning
+    return await(socket_accept_async($sock)); // @phpstan-ignore return.type
+}
+
+/**
+ * @param resource $stream
+ *
+ * @return \Fiber<void,void,int|false,void>
+ */
+function stream_write_async(mixed $stream, string $buffer): \Fiber
+{
+    /** @var \Fiber<void,void,int|false,void> */
+    $deferred = async(static function (): mixed {
+        return \Fiber::suspend();
+    });
+    $deferred->start();
+
+    Scheduler::get()->registerDelay($deferred);
+
+    Scheduler::get()->onStreamWritable($stream, static function (mixed $stream) use ($deferred, $buffer): void {
+        assert(is_resource($stream));
+
+        Scheduler::get()->unregisterDelay($deferred);
+        $deferred->resume(fwrite($stream, $buffer));
+    });
+
+    return $deferred;
+}
+
+/**
+ * @param resource $stream
+ */
+function stream_write(mixed $stream, string $buffer): int|false
+{
+    // TODO: suspend until stream_select instead of spinning
+    return await(stream_write_async($stream, $buffer)); // @phpstan-ignore return.type
 }
 
 function delay(Duration $time): void

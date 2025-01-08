@@ -11,6 +11,11 @@ return (new Config())
     ->setRules([
 		'@Symfony' => true,
 		'declare_strict_types' => true,
+		'phpdoc_to_comment' => [
+			'ignored_tags' => [
+				'var',
+			],
+		]
     ])
     ->setFinder(
         (new Finder())

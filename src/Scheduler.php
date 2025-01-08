@@ -7,10 +7,13 @@ namespace Neumb\Scheduler;
 final class Scheduler
 {
     private static self $instance;
-    /** @var \Fiber<void,void,void,void> */
+
+    /** @var \Fiber<mixed,mixed,mixed,mixed> */
     private \Fiber $mainLoopFiber;
-    /** @var \SplQueue<\Fiber<mixed,mixed,mixed,mixed>> */
+
+    /** @var \SplQueue<\Fiber<mixed,mixed,mixed,mixed>> * */
     private \SplQueue $queue;
+
     /** @var \WeakMap<\Fiber<mixed,mixed,mixed,mixed>,bool> */
     private \WeakMap $delayedTasks;
 
@@ -59,15 +62,22 @@ final class Scheduler
     }
 
     /**
-     * @param \Fiber<mixed,mixed,mixed,mixed> $task
+     * @template F of \Fiber
+     *
+     * @param F $task
      */
     public function registerDelay(\Fiber $task): void
     {
+        /*
+         * @phpstan-ignore offsetAssign.dimType, assign.propertyType
+         */
         $this->delayedTasks[$task] = true;
     }
 
     /**
-     * @param \Fiber<mixed,mixed,mixed,mixed> $task
+     * @template F of \Fiber
+     *
+     * @param F $task
      */
     public function unregisterDelay(\Fiber $task): void
     {
@@ -75,10 +85,15 @@ final class Scheduler
     }
 
     /**
-     * @param \Fiber<mixed,mixed,mixed,mixed> $task
+     * @template F of \Fiber
+     *
+     * @param F $task
      */
     public function isDelayed(\Fiber $task): bool
     {
+        /*
+         * @phpstan-ignore offsetAssign.dimType, assign.propertyType
+         */
         return $this->delayedTasks[$task] ?? false;
     }
 
@@ -162,7 +177,11 @@ final class Scheduler
             return;
         }
 
-        $n = stream_select($r, $w, $ex, 0, $timeout->asMicroseconds());
+        if ($timeout->asNanoseconds() > 0 || !$this->queue->isEmpty()) {
+            $n = stream_select($r, $w, $ex, 0, $timeout->asMicroseconds());
+        } else {
+            $n = stream_select($r, $w, $ex, null);
+        }
 
         if (false === $n) {
             panic('stream_select: failed');
