@@ -11,14 +11,14 @@ use function Neumb\Scheduler\dprintfn;
 
 $scheduler = Scheduler::get();
 
-$scheduler->repeat(Duration::milliseconds(500), static function (int $start, int $now) use ($scheduler): bool {
+$scheduler->repeat(Duration::milliseconds(500), static function (int $start, int $now): bool {
     static $times = 0;
     assert(is_int($times));
 
     dprintfn('the recurrent task has executed %d times', ++$times);
 
     if ($times > 4) {
-        $scheduler->enqueue(fn () => dprintfn('the recurrent task has stopped'));
+        dprintfn('the recurrent task has stopped');
 
         return false;
     }
