@@ -108,28 +108,30 @@ final class Scheduler
 
     private function mainLoop(): void
     {
-        try {
-            $this->start = $this->clock->now();
-            $this->running = true;
+        $this->start = $this->clock->now();
+        $this->running = true;
 
-            while ($this->cycle()) {
-            }
-        } finally {
-            $this->running = false;
+        while ($this->cycle()) {
         }
     }
 
     private function advanceQueueTasks(): void
     {
-        if ($this->queue->isEmpty()) {
-            return;
-        }
+        $count = $this->queue->count();
 
-        $task = $this->queue->dequeue();
-        advance($task);
+        while (--$count >= 0) {
+            $t = $this->queue->dequeue();
 
-        if (!$task->isTerminated()) {
-            $this->queue->enqueue($task);
+            if ($this->isDelayed($t)) {
+                $this->queue->enqueue($t);
+                continue;
+            }
+
+            if (! $t->isStarted()) {
+                $t->start();
+            } elseif ($t->isSuspended()) {
+                $t->resume();
+            }
         }
     }
 
@@ -143,7 +145,7 @@ final class Scheduler
         }
 
         $nearTimer = $this->timers->top();
-        if (!$nearTimer->isDue(Duration::nanoseconds($this->time))) {
+        if (! $nearTimer->isDue(Duration::nanoseconds($this->time))) {
             $timeout = $nearTimer->left(Duration::nanoseconds($this->time));
             $yield = false;
 
@@ -153,12 +155,12 @@ final class Scheduler
         $timer = $this->timers->shift();
 
         $task = async($timer->callback);
-        advance($task, $this->start, $this->time);
+        $task->start($this->start, $this->time);
 
         if ($timer->recurrent) {
             if ($task->isTerminated() && false !== $task->getReturn()) { // re-schedule the timer until it returns false
                 $this->timers->add($timer->withSince(Duration::nanoseconds($this->time)));
-            } elseif (!$task->isTerminated()) {
+            } elseif (! $task->isTerminated()) {
                 $this->enqueue($task); // enqueue the timer task to the tasks queue
             }
         }
@@ -177,7 +179,7 @@ final class Scheduler
             return;
         }
 
-        if ($timeout->asNanoseconds() > 0 || !$this->queue->isEmpty()) {
+        if ($timeout->asNanoseconds() > 0) {
             $n = stream_select($r, $w, $ex, 0, $timeout->asMicroseconds());
         } else {
             $n = stream_select($r, $w, $ex, null);
@@ -196,7 +198,14 @@ final class Scheduler
             $subs = $this->readStreams->forStream($stream);
 
             foreach ($subs as $sub) {
-                advance($sub->task, $stream, $this->start, $this->time);
+                if ($this->isDelayed($sub->task)) {
+                    continue;
+                }
+                if (! $sub->task->isStarted()) {
+                    $sub->task->start($stream, $this->start, $this->time);
+                } elseif (! $sub->task->isTerminated()) {
+                    $sub->task->resume();
+                }
 
                 if ($sub->task->isTerminated()) {
                     $this->readStreams->remove($sub);
@@ -208,7 +217,14 @@ final class Scheduler
             $subs = $this->writeStreams->forStream($stream);
 
             foreach ($subs as $sub) {
-                advance($sub->task, $stream, $this->start, $this->time);
+                if ($this->isDelayed($sub->task)) {
+                    continue;
+                }
+                if (! $sub->task->isStarted()) {
+                    $sub->task->start($stream, $this->start, $this->time);
+                } elseif (! $sub->task->isTerminated()) {
+                    $sub->task->resume();
+                }
 
                 if ($sub->task->isTerminated()) {
                     $this->writeStreams->remove($sub);

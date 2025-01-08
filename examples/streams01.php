@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 require_once __DIR__.'/../vendor/autoload.php';
 
+use Neumb\Scheduler\Duration;
 use Neumb\Scheduler\Scheduler;
 
+use function Neumb\Scheduler\delay;
 use function Neumb\Scheduler\dprintfn;
 use function Neumb\Scheduler\go;
 use function Neumb\Scheduler\panic;
@@ -64,6 +66,7 @@ dprintfn('total clients: %d', count($clients));
  */
 function client_worker(Socket $socket, object $state): void
 {
+    dprintfn('dispatched new client worker');
     $stream = socket_export_stream($socket);
     assert(is_resource($stream));
 
@@ -82,8 +85,8 @@ function client_worker(Socket $socket, object $state): void
 
             assert(is_string($addr));
             assert(is_int($port));
-            dprintfn('the client has disconnected [%s:%d]', $addr, $port);
 
+            dprintfn('the client has disconnected [%s:%d]', $addr, $port);
             dprintfn('total connections: %d', count($state->clients));
 
             return;
@@ -116,5 +119,15 @@ go(function (Socket $server, object $state): void {
         go(client_worker(...), $sock, $state);
     }
 }, $server, (object) ['clients' => &$clients]);
+
+go(function (): void {
+    $tick = 0;
+    while (true) { // @phpstan-ignore while.alwaysTrue
+        delay(Duration::milliseconds(1000));
+        dprintfn('%s', ($tick = 1 - $tick) ? 'tick' : 'tock');
+    }
+});
+
+$tick = 1;
 
 $sched->run();

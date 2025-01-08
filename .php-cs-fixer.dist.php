@@ -11,6 +11,7 @@ return (new Config())
     ->setRules([
 		'@Symfony' => true,
 		'declare_strict_types' => true,
+		'not_operator_with_successor_space' => true,
 		'phpdoc_to_comment' => [
 			'ignored_tags' => [
 				'var',

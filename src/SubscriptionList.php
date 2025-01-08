@@ -30,7 +30,7 @@ final class SubscriptionList
 
     public function remove(StreamSubscription $sub): void
     {
-        if (!isset($this->subscriptions[(int) $sub->stream])) {
+        if (! isset($this->subscriptions[(int) $sub->stream])) {
             return;
         }
         unset($this->subscriptions[(int) $sub->stream][$sub]);
@@ -43,7 +43,7 @@ final class SubscriptionList
      */
     public function forStream(mixed $stream): iterable
     {
-        if (!is_resource($stream)) {
+        if (! is_resource($stream)) {
             panic('expected argument of type resource, %s given', get_debug_type($stream));
         }
         foreach ($this->subscriptions[(int) $stream] as $sub) {
@@ -75,6 +75,6 @@ final class SubscriptionList
 
     public function isNotEmpty(): bool
     {
-        return !$this->isEmpty();
+        return ! $this->isEmpty();
     }
 }

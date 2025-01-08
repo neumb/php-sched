@@ -14,7 +14,7 @@ final readonly class StreamSubscription
      */
     public function __construct(mixed $stream, public \Fiber $task)
     {
-        if (!is_resource($stream)) {
+        if (! is_resource($stream)) {
             throw new \InvalidArgumentException(sprintf('Stream argument must be a resource, %s given.', get_debug_type($stream)));
         }
 

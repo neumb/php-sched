@@ -34,11 +34,11 @@ function all(\Fiber ...$tasks): \Fiber
             $queue->enqueue($task);
         }
 
-        while (!$queue->isEmpty()) {
+        while (! $queue->isEmpty()) {
             $task = $queue->dequeue();
 
-            if (!$task->isTerminated()) {
-                if (!$task->isStarted()) {
+            if (! $task->isTerminated()) {
+                if (! $task->isStarted()) {
                     $task->start();
                 } else {
                     $task->resume();
@@ -83,43 +83,40 @@ function wrapAsync(\Closure|\Fiber $task): \Fiber
  */
 function await(\Fiber $task, mixed ...$args): mixed
 {
-    $currentTask = \Fiber::getCurrent() ?? throw new \RuntimeException('Awaiting operation outside of the event loop is unsupported.');
-
-    while (!$task->isTerminated()) {
-        Scheduler::get()->enqueue(static function () use (&$currentTask) {
-            advance($currentTask);
-        });
-
-        advance($task);
-        $currentTask->suspend();
+    while (! $task->isTerminated()) {
+        \Fiber::suspend();
     }
 
     return $task->getReturn();
 }
 
-/**
- * @template F of \Fiber
- *
- * @param F $task
- */
-function advance(\Fiber $task, mixed ...$args): void
-{
-    if (Scheduler::get()->isDelayed($task)) {
-        return;
-    }
-
-    if (!$task->isStarted()) {
-        $task->start(...$args);
-    } elseif ($task->isSuspended()) {
-        $task->resume();
-    }
-}
-
 function go(\Closure $task, mixed ...$args): void
 {
-    Scheduler::get()->enqueue(static function () use ($task, $args): void {
-        $task(...$args);
-    });
+    $t = async($task);
+
+    $currentTask = \Fiber::getCurrent();
+
+    $go = static function () use ($t, $args, &$go) {
+        if (Scheduler::get()->isDelayed($t)) {
+            \Fiber::suspend();
+        }
+        if (! $t->isStarted()) {
+            $t->start(...$args);
+        } elseif (! $t->isTerminated()) {
+            $t->resume();
+        } else {
+            return;
+        }
+
+        Scheduler::get()->enqueue($go);
+        \Fiber::suspend();
+    };
+
+    Scheduler::get()->enqueue($go);
+
+    if (null !== \Fiber::getCurrent()) {
+        \Fiber::suspend();
+    }
 }
 
 /**
@@ -136,12 +133,9 @@ function stream_read_async(mixed $stream, int $length): \Fiber
     });
     $deferred->start();
 
-    Scheduler::get()->registerDelay($deferred);
-
     Scheduler::get()->onStreamReadable($stream, static function (mixed $stream) use ($length, $deferred): void {
         assert(is_resource($stream));
 
-        Scheduler::get()->unregisterDelay($deferred);
         $deferred->resume(fread($stream, $length));
     });
 
@@ -168,14 +162,11 @@ function socket_accept_async(\Socket $sock): \Fiber
     });
     $deferred->start();
 
-    Scheduler::get()->registerDelay($deferred);
-
     Scheduler::get()->onSocketReadable($sock, static function (mixed $stream) use ($deferred): void {
         assert(is_resource($stream));
         $sock = socket_import_stream($stream);
         assert($sock instanceof \Socket);
 
-        Scheduler::get()->unregisterDelay($deferred);
         $deferred->resume(socket_accept($sock));
     });
 
@@ -184,7 +175,6 @@ function socket_accept_async(\Socket $sock): \Fiber
 
 function socket_accept_(\Socket $sock): \Socket|false
 {
-    // TODO: suspend until stream_select instead of spinning
     return await(socket_accept_async($sock)); // @phpstan-ignore return.type
 }
 
@@ -201,12 +191,9 @@ function stream_write_async(mixed $stream, string $buffer): \Fiber
     });
     $deferred->start();
 
-    Scheduler::get()->registerDelay($deferred);
-
     Scheduler::get()->onStreamWritable($stream, static function (mixed $stream) use ($deferred, $buffer): void {
         assert(is_resource($stream));
 
-        Scheduler::get()->unregisterDelay($deferred);
         $deferred->resume(fwrite($stream, $buffer));
     });
 
@@ -218,7 +205,6 @@ function stream_write_async(mixed $stream, string $buffer): \Fiber
  */
 function stream_write(mixed $stream, string $buffer): int|false
 {
-    // TODO: suspend until stream_select instead of spinning
     return await(stream_write_async($stream, $buffer)); // @phpstan-ignore return.type
 }
 
