@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Neumb\Scheduler;
 
-function dd(mixed ...$values): never
+function dump(mixed ...$values): void
 {
     foreach ($values as $v) {
         var_dump($v);
     }
+}
+
+function dd(mixed ...$values): never
+{
+    dump($values);
     exit(1);
 }
 

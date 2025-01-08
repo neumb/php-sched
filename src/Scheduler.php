@@ -33,6 +33,12 @@ final class Scheduler
         $this->delayedTasks = new \WeakMap();
         $this->readStreams = SubscriptionList::new();
         $this->writeStreams = SubscriptionList::new();
+
+        register_shutdown_function(static function (): void {
+            if (! self::get()->isRunning()) {
+                self::get()->run();
+            }
+        });
     }
 
     public static function get(): self
@@ -108,10 +114,14 @@ final class Scheduler
 
     private function mainLoop(): void
     {
-        $this->start = $this->clock->now();
-        $this->running = true;
+        try {
+            $this->start = $this->clock->now();
+            $this->running = true;
 
-        while ($this->cycle()) {
+            while ($this->cycle()) {
+            }
+        } finally {
+            $this->running = false;
         }
     }
 
