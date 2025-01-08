@@ -11,7 +11,7 @@ use function Neumb\Scheduler\dprintfn;
 
 $scheduler = Scheduler::get();
 
-$scheduler->repeat(Duration::milliseconds(500), static function (int $start, int $now): bool {
+Scheduler::get()->repeat(Duration::milliseconds(500), static function (): bool {
     static $times = 0;
     assert(is_int($times));
 
@@ -26,4 +26,14 @@ $scheduler->repeat(Duration::milliseconds(500), static function (int $start, int
     return true;
 });
 
-$scheduler->run();
+$scheduler->run(); // explicitly run the loop
+
+/*
+ * output:
+ * [0500]: the recurrent task has executed 1 times
+ * [1000]: the recurrent task has executed 2 times
+ * [1500]: the recurrent task has executed 3 times
+ * [2000]: the recurrent task has executed 4 times
+ * [2501]: the recurrent task has executed 5 times
+ * [2501]: the recurrent task has stopped
+ */

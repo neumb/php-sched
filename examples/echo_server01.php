@@ -122,3 +122,5 @@ go(function (): void {
         dprintfn('%s', ($tick = 1 - $tick) ? 'tick' : 'tock');
     }
 });
+
+// the loop will implicitly start here

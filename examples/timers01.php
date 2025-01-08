@@ -11,12 +11,18 @@ use function Neumb\Scheduler\dprintfn;
 
 $scheduler = Scheduler::get();
 
-$scheduler->defer(Duration::milliseconds(100), static function (int $start, int $now): void {
-    dprintfn('the deferred task has executed');
+$scheduler->defer(Duration::milliseconds(200), static function (Duration $start, Duration $now): void {
+    dprintfn('the deferred task 01 has executed');
 });
 
-$scheduler->defer(Duration::milliseconds(200), static function (int $start, int $now): void {
-    dprintfn('the deferred task has executed');
+$scheduler->defer(Duration::milliseconds(100), static function (Duration $start, Duration $now): void {
+    dprintfn('the deferred task 02 has executed');
 });
 
-$scheduler->run();
+$scheduler->run(); // explicitly run the loop
+
+/*
+ * output:
+ * [0100]: the deferred task 02 has executed
+ * [0200]: the deferred task 01 has executed
+ */
