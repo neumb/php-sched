@@ -26,9 +26,19 @@ final class Duration
         return new self(round($time * 1e3) | 0);
     }
 
+    public function asMicroseconds(): int
+    {
+        return (int) ($this->duration * 1e-3);
+    }
+
     public static function milliseconds(int|float $time): self
     {
         return new self(round($time * 1e6) | 0);
+    }
+
+    public function asMilliseconds(): int
+    {
+        return (int) ($this->duration * 1e-6);
     }
 
     public static function seconds(int|float $time): self
@@ -39,10 +49,5 @@ final class Duration
     public function asNanoseconds(): int
     {
         return $this->duration;
-    }
-
-    public function asMicroseconds(): int
-    {
-        return (int) ($this->duration * 1e-3);
     }
 }

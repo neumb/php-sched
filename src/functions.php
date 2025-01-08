@@ -13,7 +13,7 @@ function dump(mixed ...$values): void
 
 function dd(mixed ...$values): never
 {
-    dump($values);
+    dump(...$values);
     exit(1);
 }
 
@@ -219,7 +219,7 @@ function delay(Duration $time): void
 
     Scheduler::get()->registerDelay($fiber);
 
-    Scheduler::get()->defer($time, static function (int $start, int $now) use ($fiber) {
+    Scheduler::get()->defer($time, static function () use ($fiber) {
         Scheduler::get()->unregisterDelay($fiber);
 
         $fiber->resume();
@@ -240,5 +240,7 @@ function printfn(string $fmt, bool|float|int|string|null ...$args): void
 
 function dprintfn(string $fmt, bool|float|int|string|null ...$args): void
 {
-    printfn("[%04d]: {$fmt}", round((Scheduler::get()->getTime() - Scheduler::get()->getStart()) * 1e-6) | 0, ...$args);
+    $timePassed = Scheduler::get()->getTime()->asMilliseconds() - Scheduler::get()->getStart()->asMilliseconds();
+
+    printfn("[%04d]: {$fmt}", $timePassed, ...$args);
 }

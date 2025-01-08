@@ -8,17 +8,14 @@ final class Scheduler
 {
     private static self $instance;
 
-    /** @var \Fiber<mixed,mixed,mixed,mixed> */
-    private \Fiber $mainLoopFiber;
-
     /** @var \SplQueue<\Fiber<mixed,mixed,mixed,mixed>> * */
     private \SplQueue $queue;
 
     /** @var \WeakMap<\Fiber<mixed,mixed,mixed,mixed>,bool> */
     private \WeakMap $delayedTasks;
 
-    private int $time = 0;
-    private int $start = 0;
+    private Duration $time;
+    private Duration $start;
     private bool $running = false;
 
     private TimerList $timers;
@@ -28,6 +25,9 @@ final class Scheduler
     private function __construct(
         private Clock $clock = new HighResolutionClock(),
     ) {
+        $this->start = Duration::zero();
+        $this->time = Duration::zero();
+
         $this->queue = new \SplQueue();
         $this->timers = TimerList::new();
         $this->delayedTasks = new \WeakMap();
@@ -46,12 +46,12 @@ final class Scheduler
         return self::$instance ??= new self();
     }
 
-    public function getTime(): int
+    public function getTime(): Duration
     {
         return $this->time;
     }
 
-    public function getStart(): int
+    public function getStart(): Duration
     {
         return $this->start;
     }
@@ -63,8 +63,7 @@ final class Scheduler
 
     public function tick(): void
     {
-        $this->time = $this->clock->now();
-        $this->timers->tick(Duration::nanoseconds($this->time));
+        $this->time = Duration::nanoseconds($this->clock->now());
     }
 
     /**
@@ -105,17 +104,8 @@ final class Scheduler
 
     public function run(): void
     {
-        $this->mainLoopFiber ??= new \Fiber($this->mainLoop(...));
-
-        $this->mainLoopFiber->isStarted()
-            ? $this->mainLoopFiber->resume()
-            : $this->mainLoopFiber->start();
-    }
-
-    private function mainLoop(): void
-    {
         try {
-            $this->start = $this->clock->now();
+            $this->start = Duration::nanoseconds($this->clock->now());
             $this->running = true;
 
             while ($this->cycle()) {
@@ -154,9 +144,12 @@ final class Scheduler
             return;
         }
 
+        $this->timers->tick($this->time);
+
         $nearTimer = $this->timers->top();
-        if (! $nearTimer->isDue(Duration::nanoseconds($this->time))) {
-            $timeout = $nearTimer->left(Duration::nanoseconds($this->time));
+
+        if (! $nearTimer->isDue($this->time)) {
+            $timeout = $nearTimer->left($this->time);
             $yield = false;
 
             return;
@@ -169,7 +162,7 @@ final class Scheduler
 
         if ($timer->recurrent) {
             if ($task->isTerminated() && false !== $task->getReturn()) { // re-schedule the timer until it returns false
-                $this->timers->add($timer->withSince(Duration::nanoseconds($this->time)));
+                $this->timers->add($timer->withSince($this->time));
             } elseif (! $task->isTerminated()) {
                 $this->enqueue($task); // enqueue the timer task to the tasks queue
             }
