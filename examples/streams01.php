@@ -71,7 +71,7 @@ $sched->onSocketReadable($server, static function () use ($sched, $server, &$cli
         dprintfn('a new client has connected [%s:%d]', $addr, $port);
         dprintfn('total connections: %d', count($clients));
 
-        $sched->onSocketReadable($sock, static function (mixed $stream) use (&$clients): void {
+        $sched->onSocketReadable($sock, static function (mixed $stream) use ($sched, &$clients): void {
             assert(is_resource($stream));
             while (true) {
                 $data = fread($stream, 1024);
@@ -94,9 +94,12 @@ $sched->onSocketReadable($server, static function () use ($sched, $server, &$cli
                     return;
                 }
 
-                if (false === fwrite($stream, $data)) {
-                    panic('the stream has been unexpectedly closed');
-                }
+                $sched->onStreamWritable($stream, static function (mixed $stream) use ($data): void {
+                    assert(is_resource($stream));
+                    if (false === fwrite($stream, $data)) {
+                        panic('the stream has been unexpectedly closed');
+                    }
+                });
 
                 Fiber::suspend();
             }

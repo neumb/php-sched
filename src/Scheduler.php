@@ -184,6 +184,18 @@ final class Scheduler
                 }
             }
         }
+
+        foreach ($w as $stream) {
+            $subs = $this->writeStreams->forStream($stream);
+
+            foreach ($subs as $sub) {
+                advance($sub->task, $stream, $this->start, $this->time);
+
+                if ($sub->task->isTerminated()) {
+                    $this->writeStreams->remove($sub);
+                }
+            }
+        }
     }
 
     private function cycle(): bool
