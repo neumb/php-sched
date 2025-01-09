@@ -102,7 +102,7 @@ function go(\Closure $task, mixed ...$args): void
     $currentTask = \Fiber::getCurrent();
 
     $go = static function () use ($t, $args, &$go) {
-        if (Scheduler::get()->isDelayed($t)) {
+        if (Runtime::get()->isDelayed($t)) {
             \Fiber::suspend();
         }
         if (! $t->isStarted()) {
@@ -113,11 +113,11 @@ function go(\Closure $task, mixed ...$args): void
             return;
         }
 
-        Scheduler::get()->enqueue($go);
+        Runtime::get()->enqueue($go);
         \Fiber::suspend();
     };
 
-    Scheduler::get()->enqueue($go);
+    Runtime::get()->enqueue($go);
 
     if (null !== \Fiber::getCurrent()) {
         \Fiber::suspend();
@@ -138,7 +138,7 @@ function stream_read_async(mixed $stream, int $length): \Fiber
     });
     $deferred->start();
 
-    Scheduler::get()->onStreamReadable($stream, static function (mixed $stream) use ($length, $deferred): void {
+    Runtime::get()->onStreamReadable($stream, static function (mixed $stream) use ($length, $deferred): void {
         assert(is_resource($stream));
 
         $deferred->resume(fread($stream, $length));
@@ -167,7 +167,7 @@ function socket_accept_async(\Socket $sock): \Fiber
     });
     $deferred->start();
 
-    Scheduler::get()->onSocketReadable($sock, static function (mixed $stream) use ($deferred): void {
+    Runtime::get()->onSocketReadable($sock, static function (mixed $stream) use ($deferred): void {
         assert(is_resource($stream));
         $sock = socket_import_stream($stream);
         assert($sock instanceof \Socket);
@@ -196,7 +196,7 @@ function stream_write_async(mixed $stream, string $buffer): \Fiber
     });
     $deferred->start();
 
-    Scheduler::get()->onStreamWritable($stream, static function (mixed $stream) use ($deferred, $buffer): void {
+    Runtime::get()->onStreamWritable($stream, static function (mixed $stream) use ($deferred, $buffer): void {
         assert(is_resource($stream));
 
         $deferred->resume(fwrite($stream, $buffer));
@@ -217,10 +217,10 @@ function delay(Duration $time): void
 {
     $fiber = \Fiber::getCurrent() ?? throw new \RuntimeException('Must be called within the running fiber.');
 
-    Scheduler::get()->registerDelay($fiber);
+    Runtime::get()->registerDelay($fiber);
 
-    Scheduler::get()->defer($time, static function () use ($fiber) {
-        Scheduler::get()->unregisterDelay($fiber);
+    Runtime::get()->defer($time, static function () use ($fiber) {
+        Runtime::get()->unregisterDelay($fiber);
 
         $fiber->resume();
     });
@@ -240,7 +240,7 @@ function printfn(string $fmt, bool|float|int|string|null ...$args): void
 
 function dprintfn(string $fmt, bool|float|int|string|null ...$args): void
 {
-    $timePassed = Scheduler::get()->getTime()->asMilliseconds() - Scheduler::get()->getStart()->asMilliseconds();
+    $timePassed = Runtime::get()->getTime()->asMilliseconds() - Runtime::get()->getStart()->asMilliseconds();
 
     printfn("[%04d]: {$fmt}", $timePassed, ...$args);
 }

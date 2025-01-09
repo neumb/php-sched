@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Neumb\Scheduler;
 
-final class Scheduler
+final class Runtime
 {
     private static self $instance;
 

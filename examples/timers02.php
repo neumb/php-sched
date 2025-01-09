@@ -5,13 +5,13 @@ declare(strict_types=1);
 require_once __DIR__.'/../vendor/autoload.php';
 
 use Neumb\Scheduler\Duration;
-use Neumb\Scheduler\Scheduler;
+use Neumb\Scheduler\Runtime;
 
 use function Neumb\Scheduler\dprintfn;
 
-$scheduler = Scheduler::get();
+$runtime = Runtime::get();
 
-Scheduler::get()->repeat(Duration::milliseconds(500), static function (): bool {
+$runtime->get()->repeat(Duration::milliseconds(500), static function (): bool {
     static $times = 0;
     assert(is_int($times));
 
@@ -26,7 +26,7 @@ Scheduler::get()->repeat(Duration::milliseconds(500), static function (): bool {
     return true;
 });
 
-$scheduler->run(); // explicitly run the loop
+$runtime->run(); // explicitly run the loop
 
 /*
  * output:
