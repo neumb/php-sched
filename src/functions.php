@@ -189,7 +189,12 @@ function socket_accept_async(\Socket $sock): \Fiber
         $sock = socket_import_stream($stream);
         assert($sock instanceof \Socket);
 
-        $deferred->resume(socket_accept($sock));
+        $acceptedSock = socket_accept($sock);
+        if ($acceptedSock instanceof \Socket) {
+            socket_set_nonblock($acceptedSock);
+        }
+
+        $deferred->resume($acceptedSock);
     });
 
     return $deferred;
@@ -256,4 +261,43 @@ function delay(Duration $time): void
 function sched(): void
 {
     current_fiber()->suspend();
+}
+
+function tcp_server_create(string $addr, int $port): \Socket
+{
+    $server = socket_create(
+        /*
+         * Communication Domain.
+         * IPv4 Internet Protocols.
+         */
+        AF_INET,
+        /*
+         * Socket Type.
+         * The SOCK_STREAM provides sequenced, two-way, connection-based byte streams.
+         */
+        SOCK_STREAM,
+        /*
+         * Protocol.
+         * Transmission Control Protocol.
+         */
+        SOL_TCP,
+    );
+
+    if (false === $server) {
+        panic('socket_create: %s', socket_strerror(socket_last_error()));
+    }
+
+    socket_set_nonblock($server);
+
+    socket_set_option($server, SOL_SOCKET, SO_REUSEADDR, 1);
+
+    if (false === socket_bind($server, SERVER_HOST, SERVER_PORT)) {
+        panic('socket_bind: %s', socket_strerror(socket_last_error()));
+    }
+
+    if (false === socket_listen($server)) {
+        panic('socket_listen: %s', socket_strerror(socket_last_error()));
+    }
+
+    return $server;
 }

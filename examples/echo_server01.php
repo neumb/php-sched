@@ -13,58 +13,47 @@ use function Neumb\Scheduler\panic;
 use function Neumb\Scheduler\socket_accept_;
 use function Neumb\Scheduler\stream_read;
 use function Neumb\Scheduler\stream_write;
+use function Neumb\Scheduler\tcp_server_create;
 
 const SERVER_HOST = '127.0.0.1';
 const SERVER_PORT = 8019;
 
-$server = socket_create(
-    /*
-     * Communication Domain.
-     * IPv4 Internet Protocols.
-     */
-    AF_INET,
-    /*
-     * Socket Type.
-     * The SOCK_STREAM provides sequenced, two-way, connection-based byte streams.
-     */
-    SOCK_STREAM,
-    /*
-     * Protocol.
-     * Transmission Control Protocol.
-     */
-    SOL_TCP,
-);
+final class State
+{
+    /** @var WeakMap<Socket,true> */
+    public WeakMap $clients;
 
-if (false === $server) {
-    panic('socket_create: %s', socket_strerror(socket_last_error()));
+    public function __construct(
+        public readonly Socket $server,
+    ) {
+        $this->clients = new WeakMap();
+    }
+
+    public function clients_add(Socket $sock): void
+    {
+        $this->clients[$sock] = true;
+    }
+
+    public function clients_del(Socket $sock): void
+    {
+        if (! isset($this->clients[$sock])) {
+            throw new RuntimeException('The given socket is not set');
+        }
+
+        unset($this->clients[$sock]);
+    }
+
+    public function clients_count(): int
+    {
+        return count($this->clients);
+    }
 }
 
-socket_set_nonblock($server);
-
-socket_set_option($server, SOL_SOCKET, SO_REUSEADDR, 1);
-
-if (false === socket_bind($server, SERVER_HOST, SERVER_PORT)) {
-    panic('socket_bind: %s', socket_strerror(socket_last_error()));
-}
-
-if (false === socket_listen($server)) {
-    panic('socket_listen: %s', socket_strerror(socket_last_error()));
-}
+$state = new State(tcp_server_create(SERVER_HOST, SERVER_PORT));
 
 dprintfn('listening to %s:%s...', SERVER_HOST, SERVER_PORT);
 
-$state = new class {
-    /** @param array<int,true> $clients */
-    public function __construct(
-        public array $clients = [],
-    ) {
-    }
-};
-
-/**
- * @param stdClass&object{clients:array<int,true>} $state
- */
-function client_worker(Socket $socket, object $state): void
+function client_worker(Socket $socket, State $state): void
 {
     socket_getpeername($socket, $addr, $port);
     assert(is_string($addr));
@@ -85,10 +74,10 @@ function client_worker(Socket $socket, object $state): void
             $sock = socket_import_stream($stream);
             assert($sock instanceof Socket);
 
-            unset($state->clients[(int) $stream]); // @phpstan-ignore assign.propertyReadOnly
+            $state->clients_del($socket);
 
             dprintfn('the client has disconnected [%s:%d]', $addr, $port);
-            dprintfn('total connections: %d', count($state->clients));
+            dprintfn('total connections: %d', $state->clients_count());
 
             return;
         }
@@ -97,23 +86,19 @@ function client_worker(Socket $socket, object $state): void
     }
 }
 
-go(function (Socket $server, object $state): void {
-    /**
-     * @var stdClass&object{clients:array<int,true>} $state
-     */
+go(function (State $state): void {
     while (true) {
-        $sock = socket_accept_($server);
+        $sock = socket_accept_($state->server);
 
         if (false === $sock) {
             panic('socket_accept: %s', socket_strerror(socket_last_error()));
         }
 
-        $state->clients[(int) socket_export_stream($sock)] = true;
-        socket_set_nonblock($sock);
+        $state->clients_add($sock);
 
         go(client_worker(...), $sock, $state);
     }
-}, $server, $state);
+}, $state);
 
 go(function (): void {
     $tick = 0;
