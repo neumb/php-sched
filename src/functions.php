@@ -17,6 +17,23 @@ function dd(mixed ...$values): never
     exit(1);
 }
 
+function printf(string $fmt, bool|float|int|string|null ...$args): void
+{
+    fprintf(STDOUT, $fmt, ...$args);
+}
+
+function printfn(string $fmt, bool|float|int|string|null ...$args): void
+{
+    printf("{$fmt}\n", ...$args);
+}
+
+function dprintfn(string $fmt, bool|float|int|string|null ...$args): void
+{
+    $timePassed = Runtime::get()->getTime()->asMilliseconds() - Runtime::get()->getStart()->asMilliseconds();
+
+    printfn("[%04d]: {$fmt}", $timePassed, ...$args);
+}
+
 function panic(string $fmt = '', bool|float|int|string|null ...$args): never
 {
     throw new \RuntimeException(sprintf($fmt, ...$args));
@@ -213,9 +230,17 @@ function stream_write(mixed $stream, string $buffer): int|false
     return await(stream_write_async($stream, $buffer)); // @phpstan-ignore return.type
 }
 
+/**
+ * @return \Fiber<mixed,mixed,mixed,mixed>
+ */
+function current_fiber(): \Fiber
+{
+    return \Fiber::getCurrent() ?? throw new \RuntimeException('Must be called within the running fiber.');
+}
+
 function delay(Duration $time): void
 {
-    $fiber = \Fiber::getCurrent() ?? throw new \RuntimeException('Must be called within the running fiber.');
+    $fiber = current_fiber();
 
     Runtime::get()->registerDelay($fiber);
 
@@ -228,19 +253,7 @@ function delay(Duration $time): void
     $fiber->suspend();
 }
 
-function printf(string $fmt, bool|float|int|string|null ...$args): void
+function sched(): void
 {
-    fprintf(STDOUT, $fmt, ...$args);
-}
-
-function printfn(string $fmt, bool|float|int|string|null ...$args): void
-{
-    printf("{$fmt}\n", ...$args);
-}
-
-function dprintfn(string $fmt, bool|float|int|string|null ...$args): void
-{
-    $timePassed = Runtime::get()->getTime()->asMilliseconds() - Runtime::get()->getStart()->asMilliseconds();
-
-    printfn("[%04d]: {$fmt}", $timePassed, ...$args);
+    current_fiber()->suspend();
 }
