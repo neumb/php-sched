@@ -115,10 +115,6 @@ function await(\Fiber $task, mixed ...$args): mixed
 function go(\Closure $task, mixed ...$args): void
 {
     Runtime::get()->dispatchRoutine($task, ...$args);
-
-    if (null !== \Fiber::getCurrent()) {
-        \Fiber::suspend();
-    }
 }
 
 /**

@@ -151,11 +151,14 @@ final class Runtime
     {
         $count = $this->routines->count();
 
-        while (--$count >= 0) {
+		/** @var \SplQueue<Routine> */
+        $tempQueue = new \SplQueue();
+
+        while (! $this->routines->isEmpty()) {
             $r = $this->routines->dequeue();
 
             if ($this->isDelayed($r->routine)) {
-                $this->routines->enqueue($r);
+                $tempQueue->enqueue($r);
                 continue;
             }
 
@@ -168,8 +171,10 @@ final class Runtime
                 continue;
             }
 
-            $this->routines->enqueue($r);
+            $tempQueue->enqueue($r);
         }
+
+        $this->routines = $tempQueue;
     }
 
     private function advanceTimers(Duration &$timeout, bool &$yield): void
@@ -295,7 +300,7 @@ final class Runtime
 
         if ($timeout->asMicroseconds() > 0) {
             usleep($timeout->asMicroseconds());
-        } elseif ($this->queue->isEmpty()) {
+        } elseif ($this->queue->isEmpty() && $this->routines->isEmpty()) {
             return false;
         }
 
