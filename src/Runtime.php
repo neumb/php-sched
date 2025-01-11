@@ -71,7 +71,7 @@ final class Runtime
      *
      * @param F $task
      */
-    public function registerDelay(\Fiber $task): void
+    public function markDelayed(\Fiber $task): void
     {
         /*
          * @phpstan-ignore offsetAssign.dimType, assign.propertyType
@@ -84,7 +84,7 @@ final class Runtime
      *
      * @param F $task
      */
-    public function unregisterDelay(\Fiber $task): void
+    public function unmarkDelayed(\Fiber $task): void
     {
         unset($this->delayedTasks[$task]);
     }
@@ -269,7 +269,7 @@ final class Runtime
      */
     public function enqueue(\Closure|\Fiber $task): void
     {
-        $this->queue->enqueue(wrapAsync($task));
+        $this->queue->enqueue(async_wrap($task));
     }
 
     /**
@@ -279,7 +279,7 @@ final class Runtime
     {
         $stream = socket_export_stream($socket);
 
-        $this->readStreams->add(new StreamSubscription($stream, wrapAsync($task)));
+        $this->readStreams->add(new StreamSubscription($stream, async_wrap($task)));
     }
 
     /**
@@ -288,7 +288,7 @@ final class Runtime
      */
     public function onStreamReadable(mixed $stream, \Fiber|\Closure $task): void
     {
-        $this->readStreams->add(new StreamSubscription($stream, wrapAsync($task)));
+        $this->readStreams->add(new StreamSubscription($stream, async_wrap($task)));
     }
 
     /**
@@ -297,7 +297,7 @@ final class Runtime
      */
     public function onStreamWritable(mixed $stream, \Fiber|\Closure $task): void
     {
-        $this->writeStreams->add(new StreamSubscription($stream, wrapAsync($task)));
+        $this->writeStreams->add(new StreamSubscription($stream, async_wrap($task)));
     }
 
     public function defer(Duration $timeout, \Closure $callback): void

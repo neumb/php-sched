@@ -87,7 +87,7 @@ function async(\Closure $closure): \Fiber
  *
  * @return (T is \Fiber<mixed,mixed,mixed,mixed> ? T : \Fiber<mixed,mixed,mixed,mixed>)
  */
-function wrapAsync(\Closure|\Fiber $task): \Fiber
+function async_wrap(\Closure|\Fiber $task): \Fiber
 {
     if ($task instanceof \Closure) {
         assert($task instanceof \Closure);
@@ -247,10 +247,10 @@ function delay(Duration $time): void
 {
     $fiber = current_fiber();
 
-    Runtime::get()->registerDelay($fiber);
+    Runtime::get()->markDelayed($fiber);
 
     Runtime::get()->defer($time, static function () use ($fiber) {
-        Runtime::get()->unregisterDelay($fiber);
+        Runtime::get()->unmarkDelayed($fiber);
 
         $fiber->resume();
     });
