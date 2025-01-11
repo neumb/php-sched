@@ -114,27 +114,7 @@ function await(\Fiber $task, mixed ...$args): mixed
 
 function go(\Closure $task, mixed ...$args): void
 {
-    $t = async($task);
-
-    $currentTask = \Fiber::getCurrent();
-
-    $go = static function () use ($t, $args, &$go) {
-        if (Runtime::get()->isDelayed($t)) {
-            \Fiber::suspend();
-        }
-        if (! $t->isStarted()) {
-            $t->start(...$args);
-        } elseif (! $t->isTerminated()) {
-            $t->resume();
-        } else {
-            return;
-        }
-
-        Runtime::get()->enqueue($go);
-        \Fiber::suspend();
-    };
-
-    Runtime::get()->enqueue($go);
+    Runtime::get()->dispatchRoutine($task, ...$args);
 
     if (null !== \Fiber::getCurrent()) {
         \Fiber::suspend();

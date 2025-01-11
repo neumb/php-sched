@@ -14,6 +14,9 @@ final class Runtime
     /** @var \WeakMap<\Fiber<mixed,mixed,mixed,mixed>,bool> */
     private \WeakMap $delayedTasks;
 
+    /** @var \SplQueue<Routine> * */
+    private \SplQueue $routines;
+
     private Duration $time;
     private Duration $start;
     private bool $running = false;
@@ -29,6 +32,7 @@ final class Runtime
         $this->time = Duration::zero();
 
         $this->queue = new \SplQueue();
+        $this->routines = new \SplQueue();
         $this->timers = TimerList::new();
         $this->delayedTasks = new \WeakMap();
         $this->readStreams = SubscriptionList::new();
@@ -102,6 +106,14 @@ final class Runtime
         return $this->delayedTasks[$task] ?? false;
     }
 
+    /**
+     * @param \Closure(mixed):mixed $routine
+     */
+    public function dispatchRoutine(\Closure $routine, mixed ...$args): void
+    {
+        $this->routines->enqueue(new Routine(async($routine), $args));
+    }
+
     public function run(): void
     {
         try {
@@ -132,6 +144,31 @@ final class Runtime
             } elseif ($t->isSuspended()) {
                 $t->resume();
             }
+        }
+    }
+
+    private function advanceRoutines(): void
+    {
+        $count = $this->routines->count();
+
+        while (--$count >= 0) {
+            $r = $this->routines->dequeue();
+
+            if ($this->isDelayed($r->routine)) {
+                $this->routines->enqueue($r);
+                continue;
+            }
+
+            if (! $r->routine->isStarted()) {
+                $r->routine->start(...$r->args);
+            } elseif ($r->routine->isSuspended()) {
+                $r->routine->resume();
+            } else {
+                // the routine has terminated
+                continue;
+            }
+
+            $this->routines->enqueue($r);
         }
     }
 
@@ -241,6 +278,7 @@ final class Runtime
         $this->tick();
 
         $this->advanceQueueTasks();
+        $this->advanceRoutines();
 
         $timeout = Duration::zero();
         $yield = false;
