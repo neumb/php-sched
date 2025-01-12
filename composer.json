@@ -3,7 +3,7 @@
     "description": "Cooperative scheduler written in PHP",
     "type": "library",
     "license": "MIT",
-	"require": {},
+    "require": {},
     "require-dev": {
         "phpstan/phpstan": "^2.1",
         "friendsofphp/php-cs-fixer": "^3.66",
@@ -13,8 +13,8 @@
         "psr-4": {
             "Neumb\\Scheduler\\": "src/"
         },
-		"files": [
-			"src/functions.php"
-		]
+        "files": [
+            "src/functions.php"
+        ]
     }
 }
