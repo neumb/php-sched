@@ -226,8 +226,8 @@ function wakeup_on_socket_readable(\Socket $sock): void
 
     Runtime::get()->markStreamAwaiting($current);
     Runtime::get()->onSocketReadable($sock, static function () use ($current): void {
-        $current->resume();
         Runtime::get()->unmarkStreamAwaiting($current);
+        $current->resume();
     });
 
     $current->suspend();
@@ -242,8 +242,8 @@ function wakeup_on_stream_readable(mixed $stream): void
 
     Runtime::get()->markStreamAwaiting($current);
     Runtime::get()->onStreamReadable($stream, static function () use ($current): void {
-        $current->resume();
         Runtime::get()->unmarkStreamAwaiting($current);
+        $current->resume();
     });
 
     $current->suspend();
@@ -258,8 +258,8 @@ function wakeup_on_stream_writable(mixed $stream): void
 
     Runtime::get()->markStreamAwaiting($current);
     Runtime::get()->onStreamWritable($stream, static function () use ($current): void {
-        $current->resume();
         Runtime::get()->unmarkStreamAwaiting($current);
+        $current->resume();
     });
 
     $current->suspend();
