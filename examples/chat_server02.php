@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 require_once __DIR__.'/../vendor/autoload.php';
 
-use Neumb\Scheduler\Duration;
-
-use function Neumb\Scheduler\delay;
 use function Neumb\Scheduler\dprintfn;
 use function Neumb\Scheduler\go;
 use function Neumb\Scheduler\panic;
@@ -20,32 +17,68 @@ const SERVER_PORT = 8019;
 
 final class State
 {
-    /** @var WeakMap<Socket,true> */
-    public WeakMap $clients;
+    /** @var array<int,Socket> */
+    private array $clients = [];
+
+    /**
+     * @var SplQueue<array{0:WeakReference<Socket>,1:string}>
+     */
+    private SplQueue $responseQueue;
 
     public function __construct(
         public readonly Socket $server,
     ) {
-        $this->clients = new WeakMap();
+        $this->responseQueue = new SplQueue();
+    }
+
+    public function response_queue_push(Socket $sock, string $d): void
+    {
+        $this->responseQueue->enqueue([WeakReference::create($sock), $d]);
+    }
+
+    /**
+     * @return non-negative-int
+     */
+    public function response_queue_size(): int
+    {
+        return count($this->responseQueue);
+    }
+
+    /**
+     * @return array{0:WeakReference<Socket>,1:string}
+     */
+    public function response_queue_shift(): array
+    {
+        return $this->responseQueue->dequeue();
     }
 
     public function clients_add(Socket $sock): void
     {
-        $this->clients[$sock] = true;
+        $this->clients[(int) socket_export_stream($sock)] = $sock;
     }
 
     public function clients_del(Socket $sock): void
     {
-        if (! isset($this->clients[$sock])) {
+        $stream = socket_export_stream($sock);
+
+        if (! isset($this->clients[(int) $stream])) {
             throw new RuntimeException('The given socket is not set');
         }
 
-        unset($this->clients[$sock]);
+        unset($this->clients[(int) $stream]);
     }
 
     public function clients_count(): int
     {
         return count($this->clients);
+    }
+
+    /**
+     * @return iterable<Socket>
+     */
+    public function clients_iter(): iterable
+    {
+        yield from $this->clients;
     }
 }
 
@@ -65,6 +98,7 @@ function client_worker(Socket $socket, State $state): void
     assert(is_resource($stream));
 
     while (true) {
+        dprintfn('[client]: read');
         $data = stream_read($stream, 1024);
         if (false === $data) {
             panic('the stream has been unexpectedly closed');
@@ -82,12 +116,14 @@ function client_worker(Socket $socket, State $state): void
             return;
         }
 
-        stream_write($stream, $data);
+        $state->response_queue_push($socket, $data);
+        broadcast_responses($state);
     }
 }
 
 go(function (State $state): void {
     while (true) {
+        dprintfn('[server]');
         $sock = socket_accept_($state->server);
 
         if (false === $sock) {
@@ -100,12 +136,27 @@ go(function (State $state): void {
     }
 }, $state);
 
-go(function (): void {
-    $tick = 0;
-    while (true) { // @phpstan-ignore while.alwaysTrue
-        delay(Duration::milliseconds(1000));
-        dprintfn('%s', ($tick = 1 - $tick) ? 'tick' : 'tock');
+function broadcast_responses(State $state): void
+{
+    $size = $state->response_queue_size();
+    if (0 === $size) {
+        return;
     }
-});
+
+    while (--$size >= 0) {
+        [$sockRef, $data] = $state->response_queue_shift();
+
+        foreach ($state->clients_iter() as $sock) {
+            if ($sock === $sockRef->get()) {
+                continue;
+            }
+
+            $stream = socket_export_stream($sock);
+            assert(is_resource($stream));
+
+            stream_write($stream, sprintf('%02d: %s', (int) $stream, $data));
+        }
+    }
+}
 
 // the loop will implicitly start here
