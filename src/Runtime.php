@@ -11,8 +11,14 @@ final class Runtime
     /** @var \SplQueue<\Fiber<mixed,mixed,mixed,mixed>> * */
     private \SplQueue $queue;
 
+    /** @var \WeakMap<\Fiber<mixed,mixed,mixed,mixed>,\WeakReference<\Fiber<mixed,mixed,mixed,mixed>>> */
+    private \WeakMap $globalTasks;
+
     /** @var \WeakMap<\Fiber<mixed,mixed,mixed,mixed>,bool> */
     private \WeakMap $delayedTasks;
+
+    /** @var \WeakMap<\Fiber<mixed,mixed,mixed,mixed>,bool> */
+    private \WeakMap $streamAwaitingTasks;
 
     /** @var \SplQueue<Routine> * */
     private \SplQueue $routines;
@@ -34,7 +40,9 @@ final class Runtime
         $this->queue = new \SplQueue();
         $this->routines = new \SplQueue();
         $this->timers = TimerList::new();
+        $this->globalTasks = new \WeakMap();
         $this->delayedTasks = new \WeakMap();
+        $this->streamAwaitingTasks = new \WeakMap();
         $this->readStreams = SubscriptionList::new();
         $this->writeStreams = SubscriptionList::new();
 
@@ -107,11 +115,49 @@ final class Runtime
     }
 
     /**
+     * @template F of \Fiber
+     *
+     * @param F $task
+     */
+    public function markStreamAwaiting(\Fiber $task): bool
+    {
+        /*
+         * @phpstan-ignore offsetAssign.dimType, assign.propertyType
+         */
+        return $this->streamAwaitingTasks[$task] = true;
+    }
+
+    /**
+     * @template F of \Fiber
+     *
+     * @param F $task
+     */
+    public function unmarkStreamAwaiting(\Fiber $task): void
+    {
+        unset($this->streamAwaitingTasks[$task]);
+    }
+
+    /**
+     * @template F of \Fiber
+     *
+     * @param F $task
+     */
+    public function isWaitingForStream(\Fiber $task): bool
+    {
+        /*
+         * @phpstan-ignore offsetAssign.dimType, assign.propertyType
+         */
+        return $this->streamAwaitingTasks[$task] ?? false;
+    }
+
+    /**
      * @param \Closure(mixed):mixed $routine
      */
     public function dispatchRoutine(\Closure $routine, mixed ...$args): void
     {
-        $this->routines->enqueue(new Routine(async($routine), $args));
+        $task = async($routine);
+        $this->globalTasks[$task] = \WeakReference::create($task);
+        $this->routines->enqueue(new Routine($task, $args));
     }
 
     public function run(): void
@@ -139,6 +185,11 @@ final class Runtime
                 continue;
             }
 
+            if ($this->isWaitingForStream($t)) {
+                $this->queue->enqueue($t);
+                continue;
+            }
+
             if (! $t->isStarted()) {
                 $t->start();
             } elseif ($t->isSuspended()) {
@@ -147,18 +198,25 @@ final class Runtime
         }
     }
 
+    private function allTasksWaitingForStream(): bool
+    {
+        return count($this->globalTasks) === count($this->streamAwaitingTasks);
+    }
+
     private function advanceRoutines(): void
     {
         $count = $this->routines->count();
 
-		/** @var \SplQueue<Routine> */
-        $tempQueue = new \SplQueue();
-
-        while (! $this->routines->isEmpty()) {
+        while (--$count >= 0) {
             $r = $this->routines->dequeue();
 
             if ($this->isDelayed($r->routine)) {
-                $tempQueue->enqueue($r);
+                $this->routines->enqueue($r);
+                continue;
+            }
+
+            if ($this->isWaitingForStream($r->routine)) {
+                $this->routines->enqueue($r);
                 continue;
             }
 
@@ -171,10 +229,8 @@ final class Runtime
                 continue;
             }
 
-            $tempQueue->enqueue($r);
+            $this->routines->enqueue($r);
         }
-
-        $this->routines = $tempQueue;
     }
 
     private function advanceTimers(Duration &$timeout, bool &$yield): void
@@ -224,7 +280,7 @@ final class Runtime
             return;
         }
 
-        if ($timeout->asNanoseconds() > 0) {
+        if ($timeout->asNanoseconds() > 0 || ! $this->allTasksWaitingForStream()) {
             $n = stream_select($r, $w, $ex, 0, $timeout->asMicroseconds());
         } else {
             $n = stream_select($r, $w, $ex, null);
@@ -312,7 +368,9 @@ final class Runtime
      */
     public function enqueue(\Closure|\Fiber $task): void
     {
-        $this->queue->enqueue(async_wrap($task));
+        $task = async_wrap($task);
+        $this->globalTasks[$task] = \WeakReference::create($task);
+        $this->queue->enqueue($task);
     }
 
     /**

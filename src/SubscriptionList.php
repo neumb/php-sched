@@ -7,7 +7,7 @@ namespace Neumb\Scheduler;
 final class SubscriptionList
 {
     /**
-     * @param array<int,\WeakMap<StreamSubscription,StreamSubscription>> $subscriptions
+     * @param array<int,array<int,StreamSubscription>> $subscriptions
      */
     private function __construct(
         private array $subscriptions = [],
@@ -21,11 +21,8 @@ final class SubscriptionList
 
     public function add(StreamSubscription $sub): void
     {
-        /** @var \WeakMap<StreamSubscription,StreamSubscription> */
-        $map = new \WeakMap();
-
-        $this->subscriptions[(int) $sub->stream] ??= $map;
-        $this->subscriptions[(int) $sub->stream][$sub] = $sub;
+        $this->subscriptions[(int) $sub->stream] ??= [];
+        $this->subscriptions[(int) $sub->stream][spl_object_id($sub)] = $sub;
     }
 
     public function remove(StreamSubscription $sub): void
@@ -33,22 +30,22 @@ final class SubscriptionList
         if (! isset($this->subscriptions[(int) $sub->stream])) {
             return;
         }
-        unset($this->subscriptions[(int) $sub->stream][$sub]);
+
+        unset($this->subscriptions[(int) $sub->stream][spl_object_id($sub)]);
     }
 
     /**
      * @param resource $stream
      *
-     * @return iterable<StreamSubscription>
+     * @return list<StreamSubscription>
      */
-    public function forStream(mixed $stream): iterable
+    public function forStream(mixed $stream): array
     {
         if (! is_resource($stream)) {
             panic('expected argument of type resource, %s given', get_debug_type($stream));
         }
-        foreach ($this->subscriptions[(int) $stream] as $sub) {
-            yield $sub;
-        }
+
+        return array_values($this->subscriptions[(int) $stream]);
     }
 
     /**

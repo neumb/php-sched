@@ -146,7 +146,10 @@ function stream_read_async(mixed $stream, int $length): \Fiber
  */
 function stream_read(mixed $stream, int $length): string|false
 {
-    return await(stream_read_async($stream, $length)); // @phpstan-ignore return.type
+    $t = stream_read_async($stream, $length);
+    wakeup_on_stream_readable($stream);
+
+    return await($t); // @phpstan-ignore return.type
 }
 
 /**
@@ -178,7 +181,10 @@ function socket_accept_async(\Socket $sock): \Fiber
 
 function socket_accept_(\Socket $sock): \Socket|false
 {
-    return await(socket_accept_async($sock)); // @phpstan-ignore return.type
+    $t = socket_accept_async($sock);
+    wakeup_on_socket_readable($sock);
+
+    return await($t); // @phpstan-ignore return.type
 }
 
 /**
@@ -208,7 +214,55 @@ function stream_write_async(mixed $stream, string $buffer): \Fiber
  */
 function stream_write(mixed $stream, string $buffer): int|false
 {
-    return await(stream_write_async($stream, $buffer)); // @phpstan-ignore return.type
+    $t = stream_write_async($stream, $buffer);
+    wakeup_on_stream_writable($stream);
+
+    return await($t); // @phpstan-ignore return.type
+}
+
+function wakeup_on_socket_readable(\Socket $sock): void
+{
+    $current = current_fiber();
+
+    Runtime::get()->markStreamAwaiting($current);
+    Runtime::get()->onSocketReadable($sock, static function () use ($current): void {
+        $current->resume();
+        Runtime::get()->unmarkStreamAwaiting($current);
+    });
+
+    $current->suspend();
+}
+
+/**
+ * @param resource $stream
+ */
+function wakeup_on_stream_readable(mixed $stream): void
+{
+    $current = current_fiber();
+
+    Runtime::get()->markStreamAwaiting($current);
+    Runtime::get()->onStreamReadable($stream, static function () use ($current): void {
+        $current->resume();
+        Runtime::get()->unmarkStreamAwaiting($current);
+    });
+
+    $current->suspend();
+}
+
+/**
+ * @param resource $stream
+ */
+function wakeup_on_stream_writable(mixed $stream): void
+{
+    $current = current_fiber();
+
+    Runtime::get()->markStreamAwaiting($current);
+    Runtime::get()->onStreamWritable($stream, static function () use ($current): void {
+        $current->resume();
+        Runtime::get()->unmarkStreamAwaiting($current);
+    });
+
+    $current->suspend();
 }
 
 /**
