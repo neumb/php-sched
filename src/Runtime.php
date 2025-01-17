@@ -20,6 +20,9 @@ final class Runtime
     /** @var \WeakMap<\Fiber<mixed,mixed,mixed,mixed>,bool> */
     private \WeakMap $streamAwaitingTasks;
 
+    /** @var \WeakMap<\Fiber<mixed,mixed,mixed,mixed>,bool> */
+    private \WeakMap $chanAwaitingTasks;
+
     /** @var \SplQueue<Routine> * */
     private \SplQueue $routines;
 
@@ -43,6 +46,7 @@ final class Runtime
         $this->globalTasks = new \WeakMap();
         $this->delayedTasks = new \WeakMap();
         $this->streamAwaitingTasks = new \WeakMap();
+        $this->chanAwaitingTasks = new \WeakMap();
         $this->readStreams = SubscriptionList::new();
         $this->writeStreams = SubscriptionList::new();
 
@@ -151,6 +155,42 @@ final class Runtime
     }
 
     /**
+     * @template F of \Fiber
+     *
+     * @param F $task
+     */
+    public function markChanAwaiting(\Fiber $task): bool
+    {
+        /*
+         * @phpstan-ignore offsetAssign.dimType, assign.propertyType
+         */
+        return $this->chanAwaitingTasks[$task] = true;
+    }
+
+    /**
+     * @template F of \Fiber
+     *
+     * @param F $task
+     */
+    public function unmarkChanAwaiting(\Fiber $task): void
+    {
+        unset($this->chanAwaitingTasks[$task]);
+    }
+
+    /**
+     * @template F of \Fiber
+     *
+     * @param F $task
+     */
+    public function isWaitingForChan(\Fiber $task): bool
+    {
+        /*
+         * @phpstan-ignore offsetAssign.dimType, assign.propertyType
+         */
+        return $this->chanAwaitingTasks[$task] ?? false;
+    }
+
+    /**
      * @param \Closure(mixed):mixed $routine
      */
     public function dispatchRoutine(\Closure $routine, mixed ...$args): void
@@ -198,9 +238,10 @@ final class Runtime
         }
     }
 
-    private function allTasksWaitingForStream(): bool
+    private function canWaitForStreams(): bool
     {
-        return count($this->globalTasks) === count($this->streamAwaitingTasks);
+        return count($this->streamAwaitingTasks)
+            >= count($this->globalTasks) - count($this->chanAwaitingTasks);
     }
 
     private function advanceRoutines(): void
@@ -280,7 +321,7 @@ final class Runtime
             return;
         }
 
-        if ($timeout->asNanoseconds() > 0 || ! $this->allTasksWaitingForStream()) {
+        if ($timeout->asNanoseconds() > 0 || ! $this->canWaitForStreams()) {
             $n = stream_select($r, $w, $ex, 0, $timeout->asMicroseconds());
         } else {
             $n = stream_select($r, $w, $ex, null);

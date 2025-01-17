@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 require_once __DIR__.'/../vendor/autoload.php';
 
+use Neumb\Scheduler\Channel;
+
+use function Neumb\Scheduler\chan;
 use function Neumb\Scheduler\dprintfn;
 use function Neumb\Scheduler\go;
 use function Neumb\Scheduler\panic;
@@ -21,35 +24,24 @@ final class State
     private array $clients = [];
 
     /**
-     * @var SplQueue<array{0:WeakReference<Socket>,1:string}>
+     * @var Channel<array{WeakReference<Socket>,string}>
      */
-    private SplQueue $responseQueue;
+    private Channel $chan;
 
     public function __construct(
         public readonly Socket $server,
     ) {
-        $this->responseQueue = new SplQueue();
-    }
-
-    public function response_queue_push(Socket $sock, string $d): void
-    {
-        $this->responseQueue->enqueue([WeakReference::create($sock), $d]);
+        /** @var Channel<array{WeakReference<Socket>,string}> */
+        $chan = chan();
+        $this->chan = $chan;
     }
 
     /**
-     * @return non-negative-int
+     * @return Channel<array{WeakReference<Socket>,string}>
      */
-    public function response_queue_size(): int
+    public function chan_get(): Channel
     {
-        return count($this->responseQueue);
-    }
-
-    /**
-     * @return array{0:WeakReference<Socket>,1:string}
-     */
-    public function response_queue_shift(): array
-    {
-        return $this->responseQueue->dequeue();
+        return $this->chan;
     }
 
     public function clients_add(Socket $sock): void
@@ -97,6 +89,8 @@ function client_worker(Socket $socket, State $state): void
     $stream = socket_export_stream($socket);
     assert(is_resource($stream));
 
+    $chan = $state->chan_get();
+
     while (true) {
         dprintfn('[client]: read');
         $data = stream_read($stream, 1024);
@@ -116,8 +110,7 @@ function client_worker(Socket $socket, State $state): void
             return;
         }
 
-        $state->response_queue_push($socket, $data);
-        broadcast_responses($state);
+        $chan->send([WeakReference::create($socket), $data]);
     }
 }
 
@@ -136,27 +129,23 @@ go(function (State $state): void {
     }
 }, $state);
 
-function broadcast_responses(State $state): void
-{
-    $size = $state->response_queue_size();
-    if (0 === $size) {
-        return;
-    }
+go(function (State $state): void {
+    $chan = $state->chan_get();
 
-    while (--$size >= 0) {
-        [$sockRef, $data] = $state->response_queue_shift();
+    while (! $chan->isClosed()) {
+        [$ref, $data] = $chan->receive();
 
         foreach ($state->clients_iter() as $sock) {
-            if ($sock === $sockRef->get()) {
-                continue;
-            }
-
             $stream = socket_export_stream($sock);
             assert(is_resource($stream));
 
-            stream_write($stream, sprintf('%02d: %s', (int) $stream, $data));
+            $name = ($sock === $ref->get())
+                ? 'me'
+                : sprintf('%02d', (int) $stream);
+
+            stream_write($stream, sprintf('%s: %s', $name, $data));
         }
     }
-}
+}, $state);
 
 // the loop will implicitly start here

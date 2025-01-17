@@ -293,6 +293,14 @@ function sched(): void
     current_fiber()->suspend();
 }
 
+/**
+ * @return Channel<mixed>
+ */
+function chan(): Channel
+{
+    return Channel::new();
+}
+
 function tcp_server_create(string $addr, int $port): \Socket
 {
     $server = socket_create(
