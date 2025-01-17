@@ -9,33 +9,48 @@ use Neumb\Scheduler\Duration;
 use function Neumb\Scheduler\delay;
 use function Neumb\Scheduler\dprintfn;
 use function Neumb\Scheduler\go;
+use function Neumb\Scheduler\chan;
+use Neumb\Scheduler\Channel;
 
-go(static function (string $id): void {
+/** @var Channel<string> */
+$chan = chan();
+
+go(static function (string $id, Channel $chan): void {
+    /** @var Channel<string> $chan */
+
     for ($i = 0; $i < 2; ++$i) {
         delay(Duration::milliseconds(500));
         dprintfn('worker %s has woken up', $id);
+        $chan->send($id);
     }
 
     dprintfn('worker %s has terminated', $id);
-}, '01');
+}, '01', $chan);
 
-go(static function (string $id): void {
+go(static function (string $id, Channel $chan): void {
+    /** @var Channel<string> $chan */
+
     for ($i = 0; $i < 5; ++$i) {
         delay(Duration::milliseconds(200));
         dprintfn('worker %s has woken up', $id);
+        $chan->send($id);
+    }
+
+    $chan->close();
+
+    dprintfn('worker %s has terminated', $id);
+}, '02', $chan);
+
+go(static function (string $id, Channel $chan): void {
+    /** @var Channel<string> $chan */
+
+    while (! $chan->isClosed()) {
+        $data = $chan->receive();
+        dprintfn("worker %s has read from channel: [%s]", $id, $data);
     }
 
     dprintfn('worker %s has terminated', $id);
-}, '02');
-
-go(static function (string $id): void {
-    for ($i = 0; $i < 3; ++$i) {
-        delay(Duration::milliseconds(200));
-        dprintfn('worker %s has woken up', $id);
-    }
-
-    dprintfn('worker %s has terminated', $id);
-}, '03');
+}, '03', $chan);
 
 /*
  * output:
