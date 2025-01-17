@@ -13,18 +13,28 @@ use Neumb\Scheduler\Duration;
 use function Neumb\Scheduler\delay;
 use function Neumb\Scheduler\dprintfn;
 use function Neumb\Scheduler\go;
+use function Neumb\Scheduler\chan;
+use Neumb\Scheduler\Channel;
+
+/** @var Channel<string> */
+$chan = chan();
 
 // The `go` function dispatches a routine to run in the background.
 // It can accept a variable number of arguments for the routine.
 
-go(static function (string $id): void {
+go(static function (string $id, Channel $chan): void {
+    /** @var Channel<string> $chan */
+
     for ($i = 0; $i < 2; ++$i) {
         delay(Duration::milliseconds(500)); // yield the processor, switches to another routine
         dprintfn('worker %s has woken up', $id);
+        $chan->send($id);
     }
 
+    $chan->close();
+
     dprintfn('worker %s has terminated', $id);
-}, '01');
+}, '01', $chan);
 
 go(static function (string $id): void {
     for ($i = 0; $i < 5; ++$i) {
@@ -34,6 +44,17 @@ go(static function (string $id): void {
 
     dprintfn('worker %s has terminated', $id);
 }, '02');
+
+go(static function (string $id, Channel $chan): void {
+    /** @var Channel<string> $chan */
+
+    while (! $chan->isClosed()) {
+        $msg = $chan->receive();
+        dprintfn("worker %s has received from channel: '%s'", $id, $msg);
+    }
+
+    dprintfn('worker %s has terminated', $id);
+}, '03', $chan);
 
 // This loop will be initiated to start executing the tasks.
 // It will block the current execution until all pending tasks have been completed.
